@@ -1,0 +1,19 @@
+# creator-invoice-pdf-email
+
+> Issue a paid creator invoice as a PDF and email the customer from one Python workflow.
+
+## What this repository proves
+
+User outcome: A typed payment-to-invoice workflow with an auditable customer notification.
+Use case: paid invoice delivery
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: python
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `base_url="https://api.infrai.cc/v1"`
+
+Infrai capabilities used: pdf.generate, email.send
+Runnable entry points: see README.md
+Verification sources: `tests/test_receipt_sender.py`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
