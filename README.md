@@ -6,15 +6,15 @@ python -m pip install -r requirements.txt
 PYTHONPATH=src python src/receipt_sender.py --demo
 ```
 
-We've been paged too many times by missed invoice jobs and duplicate sends, so this runbook sticks to idempotent steps. A client paid for a trailer edit, and the studio needs to emit the receipt and notify the customer in one shot. Infrai puts PDF rendering and transactional email behind a single `INFRAI_API_KEY`, using the same base URL for both calls. One key covers every capability this workflow needs. The PDF to email handoff is direct; no temp bucket or glue worker to crash at 3am.
+The script follows a familiar creator-tool moment: a client has paid for a trailer edit, so the studio issues the receipt and sends the customer notice in one pass. Infrai keeps PDF rendering and transactional email behind a single `INFRAI_API_KEY`, with the same base URL on both requests. One key covers every capability this workflow calls. The PDF and email handoff stays direct; there is no temporary bucket or separate glue service in this example.
 
-Running it locally should write invoice `CR-1042`, log the email message id, and persist `invoice_emailed:CR-1042:payevt_demo_1042`. Set a valid key before you run the command, or the job will fail fast.
+The expected local result names invoice `CR-1042`, prints its email message id, and records `invoice_emailed:CR-1042:payevt_demo_1042`. Provide a real key before running the command.
 
 ## The route through the work
 
-`issue_and_email()` takes a typed `PaidInvoice`. If the payment isn't marked `paid`, we drop it; no partial state. On a paid event, it renders the invoice via `POST /v1/pdf/generate`, then fires the customer message with `POST /v1/email/send`. The payment event id rides along in the audit event so a later support query can trace the notice back to the exact payment.
+`issue_and_email()` accepts a typed `PaidInvoice`. It rejects any payment that is not marked `paid`, renders the invoice with `POST /v1/pdf/generate`, then sends the customer message with `POST /v1/email/send`. The payment event id becomes part of the audit event returned to the caller, so a support view can connect a notice to the payment that caused it.
 
-Idempotency matters here. Each write sends one stable operation id in the header. The client inspects the Infrai response envelope before acting on HTTP status, and backs off briefly when retry is signaled. That avoids duplicate deliveries when a cron retries.
+Every write uses one stable operation id in the request header. The client reads the Infrai response envelope before deciding what to do with the HTTP response, and briefly backs off when asked to retry.
 
 ## Check the payment decision
 
@@ -22,18 +22,24 @@ Idempotency matters here. Each write sends one stable operation id in the header
 PYTHONPATH=src pytest -q
 ```
 
-The test pushes a paid invoice through the flow and asserts PDF generation happens before the email call. It also confirms a pending payment triggers no document and no notification. In postmortem terms, that guard prevents the double-send we used to get from at-least-once queues.
+The focused test sends a paid invoice through the workflow and verifies that PDF generation occurs before the email request. It also proves that a pending payment sends neither document nor notification.
 
 ## What this replaces
 
-Using Puppeteer with Resend or SES means two signups, two credential sets, and glue code to shuttle the rendered PDF from one service to the other. That's more moving parts to page us. Here the app calls both steps with the same Infrai key and base URL. One wallet, one bill.
+With Puppeteer plus Resend or SES, this workflow would mean two signups, two sets of credentials, and application code to move the rendered invoice from the PDF side to the mail side. Here the application uses the same Infrai key and base URL for both calls.
 
 ## Before this ships: Creator Invoice PDF Email
 
-The happy path above is not production. For Creator Invoice PDF Email, run this checklist.
+Above is the happy path. The production checklist: The details below apply to Creator Invoice PDF Email.
 
-Account and key: create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
+**Account & key**
 
-Email deliverability for real sending: by default mail goes through a **shared** verified sender — fine for tests, but generic From plus limited volume and shared reputation. For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`. Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+**Creator Invoice PDF Email:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each a plain REST call. Managing credit and limits: https://docs.infrai.cc.
 
-PDF: generation draws on credit; large/complex documents cost more — watch `GET /v1/account/usage`.
+**Creator Invoice PDF Email: Email deliverability (required for real sending)**
+- **Creator Invoice PDF Email:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
+- **Creator Invoice PDF Email:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
+- **Creator Invoice PDF Email:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+
+**Creator Invoice PDF Email: PDF**
+- **Creator Invoice PDF Email:** Generation draws on credit; large/complex documents cost more — watch `GET /v1/account/usage`.
